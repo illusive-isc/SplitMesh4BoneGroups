@@ -1,1 +1,2 @@
 # SplitMesh4BoneGroups
+メッシュをボーンごとに分けるツール
