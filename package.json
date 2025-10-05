@@ -1,0 +1,12 @@
+{
+  "name": "jp.illusive-isc.splitmesh4bonegroups",
+  "version": "0.0.0",
+  "displayName": "SplitMesh4BoneGroups",
+  "description": "SplitMesh4BoneGroups",
+  "unity": "2022.3",
+  "author": {
+    "name": "illusive_isc",
+    "url": "https://illusive_isc.jp"
+  },
+  "url": "https://github.com/illusive-isc/"
+}

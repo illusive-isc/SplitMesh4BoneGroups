@@ -1,0 +1,16 @@
+{
+    "name": "jp.illusive_isc.splitmesh4bonegroupseditor",
+    "rootNamespace": "jp.illusive_isc",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
