@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -17,6 +18,7 @@ namespace jp.illusive_isc
 
         private SkinnedMeshRenderer sourceSMR;
         private List<BoneGroup> groups = new List<BoneGroup>();
+        private string outputPath = "";
 
         [MenuItem("Tools/splitMesh4BoneGroups")]
         public static void OpenWindow()
@@ -32,6 +34,70 @@ namespace jp.illusive_isc
             sourceSMR = (SkinnedMeshRenderer)
                 EditorGUILayout.ObjectField("元 SMR", sourceSMR, typeof(SkinnedMeshRenderer), true);
 
+            // 出力パスの入力欄を追加
+            GUILayout.Space(10);
+            GUILayout.Label("出力設定", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            outputPath = EditorGUILayout.TextField("出力パス (Assets/からの相対パス)", outputPath);
+            if (GUILayout.Button("フォルダー選択", GUILayout.Width(100)))
+            {
+                string selectedPath = EditorUtility.OpenFolderPanel("出力フォルダーを選択", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(selectedPath))
+                {
+                    // Assetsフォルダーからの相対パスに変換
+                    string dataPath = Application.dataPath;
+                    if (selectedPath.StartsWith(dataPath))
+                    {
+                        outputPath = selectedPath.Substring(dataPath.Length);
+                        if (outputPath.StartsWith("/") || outputPath.StartsWith("\\"))
+                            outputPath = outputPath.Substring(1);
+                        if (!string.IsNullOrEmpty(outputPath))
+                            outputPath = "/" + outputPath.Replace("\\", "/");
+                        else
+                            outputPath = ""; // Assetsフォルダー自体が選択された場合
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("エラー", "Assetsフォルダー内のパスを選択してください。", "OK");
+                    }
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // 現在の出力パスを表示
+            if (!string.IsNullOrEmpty(outputPath))
+            {
+                EditorGUILayout.LabelField("保存先プレビュー:", $"Assets{outputPath}/GeneratedMeshes/", EditorStyles.helpBox);
+            }
+            else
+            {
+                EditorGUILayout.LabelField("保存先プレビュー:", "Assets/GeneratedMeshes/", EditorStyles.helpBox);
+            }
+
+
+            EditorGUILayout.HelpBox("例: \"/MyProject\" → Assets/MyProject/GeneratedMeshes/\n空欄の場合: Assets/GeneratedMeshes/", MessageType.Info);
+
+            // プリセットボタン
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("クイック設定:", GUILayout.Width(80));
+            if (GUILayout.Button("ルート", GUILayout.Width(60)))
+            {
+                outputPath = "";
+            }
+            if (GUILayout.Button("Generated", GUILayout.Width(80)))
+            {
+                outputPath = "/Generated";
+            }
+            if (GUILayout.Button("Export", GUILayout.Width(60)))
+            {
+                outputPath = "/Export";
+            }
+            if (GUILayout.Button("Output", GUILayout.Width(60)))
+            {
+                outputPath = "/Output";
+            }
+            EditorGUILayout.EndHorizontal(); GUILayout.Space(10);
             if (GUILayout.Button("グループ追加"))
             {
                 groups.Add(new BoneGroup { name = "" });
@@ -80,7 +146,7 @@ namespace jp.illusive_isc
                     EditorUtility.DisplayDialog("Error", "元 SMR を指定してください", "OK");
                     return;
                 }
-                SplitAllGroups("ぬいぐるみ", sourceSMR, groups);
+                SplitAllGroups("ぬいぐるみ", sourceSMR, groups, null, outputPath);
             }
         }
 
@@ -88,7 +154,8 @@ namespace jp.illusive_isc
             string containerName = "",
             SkinnedMeshRenderer smr = null,
             List<BoneGroup> groupsToProcess = null,
-            Transform containerParent = null
+            Transform containerParent = null,
+            string customOutputPath = ""
         )
         {
             SkinnedMeshRenderer useSMR = smr != null ? smr : sourceSMR;
@@ -178,6 +245,8 @@ namespace jp.illusive_isc
                 if (group == null || group.bones == null || group.bones.Count == 0)
                     continue;
 
+                string uniqueAssetPath = ""; // 変数をここで宣言
+
                 List<Transform> targetBones = new List<Transform>();
                 foreach (var b in group.bones)
                 {
@@ -215,6 +284,7 @@ namespace jp.illusive_isc
 
                 Mesh newMesh = new Mesh();
                 newMesh.name = originalMesh.name + "_" + (string.IsNullOrEmpty(group.name) ? "Part" : group.name);
+
                 newMesh.vertices = vertexList.Select(i => originalMesh.vertices[i]).ToArray();
                 if (originalMesh.normals != null && originalMesh.normals.Length == vertCount)
                     newMesh.normals = vertexList.Select(i => originalMesh.normals[i]).ToArray();
@@ -280,6 +350,41 @@ namespace jp.illusive_isc
                 if (originalMesh.normals == null || originalMesh.normals.Length != vertCount)
                     newMesh.RecalculateNormals();
 
+                // GeneratedMeshesフォルダが存在しない場合は作成
+                string baseFolder = Path.Combine("Assets", customOutputPath);
+                string meshFolder = baseFolder + "/GeneratedMeshes";
+                if (!AssetDatabase.IsValidFolder(baseFolder) && !string.IsNullOrEmpty(customOutputPath))
+                {
+                    // 階層フォルダーを順次作成
+                    string[] pathParts = customOutputPath.TrimStart('/').Split('/');
+                    string currentPath = "Assets";
+                    foreach (string part in pathParts)
+                    {
+                        if (!string.IsNullOrEmpty(part))
+                        {
+                            string newPath = currentPath + "/" + part;
+                            if (!AssetDatabase.IsValidFolder(newPath))
+                            {
+                                AssetDatabase.CreateFolder(currentPath, part);
+                            }
+                            currentPath = newPath;
+                        }
+                    }
+                }
+                if (!AssetDatabase.IsValidFolder(meshFolder))
+                {
+                    AssetDatabase.CreateFolder(baseFolder, "GeneratedMeshes");
+                }
+
+                // メッシュをアセットとして保存
+                string assetPath = meshFolder + "/" + newMesh.name + ".asset";
+                uniqueAssetPath = AssetDatabase.GenerateUniqueAssetPath(assetPath);
+                AssetDatabase.CreateAsset(newMesh, uniqueAssetPath);
+
+                // アセットをビルドに含めるためにマーク
+                AssetDatabase.SetLabels(newMesh, new string[] { "Generated", "SplitMesh" });
+                AssetDatabase.SaveAssets();
+
                 // GameObject + SMR
                 GameObject newObj = new GameObject(string.IsNullOrEmpty(group.name) ? "Part" : group.name);
                 newObj.transform.position = useSMR.transform.position;
@@ -288,7 +393,15 @@ namespace jp.illusive_isc
                 newObj.transform.parent = container.transform;
 
                 SkinnedMeshRenderer newSMR = newObj.AddComponent<SkinnedMeshRenderer>();
-                newSMR.sharedMesh = newMesh;
+
+                // アセットから保存済みメッシュを読み込んで使用
+                Mesh savedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(uniqueAssetPath);
+                if (savedMesh == null)
+                {
+                    Debug.LogError($"保存されたメッシュが読み込めませんでした: {uniqueAssetPath}");
+                    savedMesh = newMesh; // フォールバック
+                }
+                newSMR.sharedMesh = savedMesh;
                 newSMR.bones = sharedBonesList.ToArray();
                 newSMR.materials = newMaterials.ToArray();
 
@@ -296,6 +409,21 @@ namespace jp.illusive_isc
                     newSMR.rootBone = sharedBoneMap[useSMR.rootBone];
                 else if (newSMR.bones.Length > 0)
                     newSMR.rootBone = newSMR.bones[0];
+            }
+
+            // 全てのアセットを保存してリフレッシュ
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            // コンテナをプレハブとして保存（オプション）
+            if (container != null)
+            {
+                string baseFolder = Path.Combine("Assets", customOutputPath);
+                string meshFolder = baseFolder + "/GeneratedMeshes";
+                string prefabPath = meshFolder + "/" + container.name + ".prefab";
+                string uniquePrefabPath = AssetDatabase.GenerateUniqueAssetPath(prefabPath);
+                PrefabUtility.SaveAsPrefabAsset(container, uniquePrefabPath);
+                Debug.Log($"分割メッシュコンテナをプレハブとして保存しました: {uniquePrefabPath}");
             }
 
             return container;
